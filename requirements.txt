@@ -1,0 +1,11 @@
+# Native install (Linux/macOS, Python 3.10-3.13). On Windows, use Docker instead
+# (see README) -- multi-agent-ale-py has no Windows wheel and needs a C++ compiler.
+#
+# NOTE: install plain `pettingzoo`, NOT `pettingzoo[atari]` -- the [atari] extra
+# hard-pins multi-agent-ale-py==0.1.11, which has no wheel for Python >= 3.10.
+numpy
+torch
+pettingzoo==1.24.3
+multi-agent-ale-py==0.1.12
+pygame>=2.3.0
+autorom[accept-rom-license]>=0.6

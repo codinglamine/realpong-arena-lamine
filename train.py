@@ -1,16 +1,19 @@
-""" train.py -- improved trainer for realpong (Karpathy policy-gradient on pong_v3).
+""" train.py -- fast trainer for realpong (Karpathy policy-gradient on pong_v3).
 
-Differences vs the original realpong.py:
-  * SERVES the ball (FIRE when it's not in play). Without this the right paddle
-    can't win, so the original trained in a broken regime and collapsed. This is
-    the key fix that lets it actually learn.
+Speed + correctness vs the original realpong.py:
+  * POINTS CURRICULUM: games go to 5 points first, then 10, then 21. Short games
+    early = far faster warmup (a 5-point game is ~4x shorter than a 21-point one).
+  * FRAME-SKIP: act once per N frames (default 4, as the agent was trained), so
+    ~4x fewer network passes per game.
+  * SERVES the ball (FIRE when out of play) -- the original never did, so the right
+    paddle couldn't win and training collapsed to "always UP". This is the key fix.
   * Higher learning rate (env LR, default 5e-3 vs the old 1e-3).
-  * Clean episode cap (env MAX_EPISODES) so it stops and saves on its own.
-  * Richer per-game line: score, W/L, reward, running average, opponent.
-  * Saves to realpong_trained.pt so the original realpong.pt is left intact.
+  * Clean episode cap (env MAX_EPISODES) and per-game stats.
 
-Run:  python train.py            (Ctrl-C to stop; autosaves)
-Env:  LR=5e-3  MAX_EPISODES=40  RESUME=1  SAVE=realpong_trained.pt
+Saves to realpong_trained.pt (leaves the original realpong.pt intact).
+
+Run:   python train.py
+Env:   LR=5e-3  MAX_EPISODES=60  FRAMESKIP=4  TO5_EPS=10  TO10_EPS=20  SAVE=realpong_trained.pt
 """
 import os
 import numpy as np
@@ -24,8 +27,11 @@ batch_size    = 10
 learning_rate = float(os.environ.get("LR", "5e-3"))
 gamma         = 0.99
 value_coef    = 0.5
-MAX_EPISODES  = int(os.environ.get("MAX_EPISODES", "0")) or None    # 0/unset = run forever
-RESUME_FROM   = os.path.join(HERE, "realpong.pt")                   # start from current weights
+FRAMESKIP     = int(os.environ.get("FRAMESKIP", "4"))
+TO5_EPS       = int(os.environ.get("TO5_EPS", "10"))     # eps 1..TO5_EPS         -> first to 5
+TO10_EPS      = int(os.environ.get("TO10_EPS", "20"))    # eps TO5_EPS+1..TO10_EPS -> first to 10
+MAX_EPISODES  = int(os.environ.get("MAX_EPISODES", "0")) or None
+RESUME_FROM   = os.path.join(HERE, "realpong.pt")
 SAVE          = os.path.join(HERE, os.environ.get("SAVE", "realpong_trained.pt"))
 SEED          = 1
 
@@ -34,6 +40,12 @@ PT, PB, BALL_RED = 34, 194, 236
 
 def ball_in_play(frame):
     return bool((frame[PT:PB, :, 0] == BALL_RED).any())
+
+
+def points_cap(ep):                       # ep is 1-based
+    if ep <= TO5_EPS:  return 5
+    if ep <= TO10_EPS: return 10
+    return 21
 
 
 def discount_rewards(r):
@@ -64,20 +76,21 @@ def main():
     running = None
     ep = 0
     opt.zero_grad()
-    print(f"training on pong_v3 (RIGHT, WITH serve) | lr={learning_rate:g} | "
-          f"opp: RANDOM (bootstrap) | cap: {MAX_EPISODES or 'inf'} | Ctrl-C to stop\n")
+    print(f"training pong_v3 (RIGHT, serve on) | lr={learning_rate:g} | frameskip={FRAMESKIP} | "
+          f"points 5->10->21 @ eps {TO5_EPS}/{TO10_EPS} | cap {MAX_EPISODES or 'inf'} eps\n")
     try:
         while MAX_EPISODES is None or ep < MAX_EPISODES:
+            cap = points_cap(ep + 1)
             obs, _ = env.reset(seed=SEED + ep)
             prev = None
             logps, values, rewards = [], [], []
             bf_last = None
             sa = sb = 0
-            while env.agents and max(sa, sb) < 21:
+            while env.agents and max(sa, sb) < cap:
                 frame = obs["first_0"]
                 if not ball_in_play(frame):
                     obs, rew, term, trunc, _ = env.step({"first_0": 1, "second_0": 1})  # serve
-                    prev = None                                  # fresh diff for the new rally
+                    prev = None
                     r = rew.get("first_0", 0.0)
                     if r > 0: sa += 1
                     elif r < 0: sb += 1
@@ -95,13 +108,18 @@ def main():
                     a_left, bf_last = ball_follower_action(frame, "left", bf_last)
                 else:
                     a_left = int(rng.choice([UP, DOWN, NOOP]))
-                obs, rew, term, trunc, _ = env.step({"first_0": action, "second_0": a_left})
-                r = rew.get("first_0", 0.0)
-                rewards.append(r)
-                if r > 0: sa += 1
-                elif r < 0: sb += 1
+                r_sum = 0.0
+                for _ in range(FRAMESKIP):                         # hold the action N frames
+                    obs, rew, term, trunc, _ = env.step({"first_0": action, "second_0": a_left})
+                    r = rew.get("first_0", 0.0)
+                    r_sum += r
+                    if r > 0: sa += 1
+                    elif r < 0: sb += 1
+                    if not env.agents or r != 0:                   # stop at point boundary
+                        break
+                rewards.append(r_sum)
 
-            if not rewards:                          # safety: no acted frames this episode
+            if not rewards:
                 ep += 1
                 continue
 
@@ -120,9 +138,9 @@ def main():
             reward_sum = float(sum(rewards))
             running = reward_sum if running is None else running * 0.99 + reward_sum * 0.01
             wl = "W" if sa > sb else "L" if sb > sa else "-"
-            print(f"ep {ep:4d} | game {sa:2d}-{sb:2d} {wl} | reward {reward_sum:+5.0f} | "
+            print(f"ep {ep:4d} | to {cap:2d} | game {sa:2d}-{sb:2d} {wl} | reward {reward_sum:+5.0f} | "
                   f"running {running:+6.2f} | opp {opp_mode}")
-            if opp_mode == "random" and running is not None and running > 10:
+            if opp_mode == "random" and cap >= 21 and running is not None and running > 10:
                 opp_mode = "follower"
                 print(">>> curriculum: graduating to ball_follower (strong)")
             if ep % 25 == 0:

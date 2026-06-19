@@ -111,18 +111,26 @@ docker run --rm -it -e MAX_EPISODES=200 -v "${PWD}:/work" -w /work realpong-aren
 MAX_EPISODES=200 python train.py
 ```
 
-`train.py` improves on the original `realpong.py` in three ways:
+`train.py` improves on the original `realpong.py`:
 
 1. **It serves the ball** (FIRE when the ball is out of play). The original never
    served, so the right paddle could never win and training collapsed to an
    "always UP" policy. This is the key fix — with it the agent immediately starts
    winning against the random opponent.
-2. **Higher learning rate** (`LR=5e-3`, vs the old `1e-3`). Override with the `LR`
-   env var.
-3. **Clean episode cap** (`MAX_EPISODES`) so it stops and saves on its own.
+2. **Points curriculum 5 → 10 → 21.** Games go to 5 points first (eps 1–`TO5_EPS`),
+   then 10 (until `TO10_EPS`), then the full 21. Short games early = much faster
+   warmup (a 5-point game is ~4× shorter than a 21-point one).
+3. **Frame-skip** (`FRAMESKIP=4`): act once per 4 frames (as the agent was trained)
+   → ~4× fewer network passes per game.
+4. **Higher learning rate** (`LR=5e-3`, vs the old `1e-3`).
+5. **Clean episode cap** (`MAX_EPISODES`) so it stops and saves on its own.
 
-It resumes from `realpong.pt`, saves to `realpong_trained.pt` (leaving the original
-intact), uses Karpathy's policy gradient + a value baseline, and an opponent
-curriculum (random → ball_follower). Beating `ball_follower` still needs **many**
-episodes (hours on CPU); a GPU helps a lot. Each per-game line shows the score,
-W/L, episode reward, and the running average.
+All knobs are env vars: `LR`, `FRAMESKIP`, `TO5_EPS`, `TO10_EPS`, `MAX_EPISODES`,
+`SAVE`, `RESUME`. It resumes from `realpong.pt`, saves to `realpong_trained.pt`
+(leaving the original intact), and uses Karpathy's policy gradient + a value
+baseline with an opponent curriculum (random → ball_follower). Each per-game line
+shows `ep | to <cap> | game A-B W/L | reward | running avg | opp`. Beating
+`ball_follower` still needs **many** episodes (hours on CPU); a GPU helps a lot.
+
+> ⚠️ Run only one training (or arena) container at a time — multiple at once share
+> the CPU and each crawls. If a run seems stuck, check `docker ps` for leftovers.

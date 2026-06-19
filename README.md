@@ -101,12 +101,28 @@ this `multi_agent_ale_py` fork, so it can't be used to add randomness.)
 ## Training a stronger agent
 
 The bundled `realpong.pt` is undertrained — it loses to the scripted
-`ball_follower`. To train a stronger one:
+`ball_follower`. Use **`train.py`** to improve it:
 
 ```bash
-python realpong.py        # resumes realpong.pt; Ctrl-C to stop (autosaves)
+# Docker (recommended). Watch the per-game stats live; Ctrl-C to stop.
+docker run --rm -it -e MAX_EPISODES=200 -v "${PWD}:/work" -w /work realpong-arena python train.py
+
+# native:
+MAX_EPISODES=200 python train.py
 ```
 
-It uses Karpathy's "Pong from pixels" policy gradient with a value baseline and an
-opponent curriculum (random → ball_follower). Expect it to need **many** episodes
-(hours on CPU) before it reliably tracks the ball and beats `ball_follower`.
+`train.py` improves on the original `realpong.py` in three ways:
+
+1. **It serves the ball** (FIRE when the ball is out of play). The original never
+   served, so the right paddle could never win and training collapsed to an
+   "always UP" policy. This is the key fix — with it the agent immediately starts
+   winning against the random opponent.
+2. **Higher learning rate** (`LR=5e-3`, vs the old `1e-3`). Override with the `LR`
+   env var.
+3. **Clean episode cap** (`MAX_EPISODES`) so it stops and saves on its own.
+
+It resumes from `realpong.pt`, saves to `realpong_trained.pt` (leaving the original
+intact), uses Karpathy's policy gradient + a value baseline, and an opponent
+curriculum (random → ball_follower). Beating `ball_follower` still needs **many**
+episodes (hours on CPU); a GPU helps a lot. Each per-game line shows the score,
+W/L, episode reward, and the running average.

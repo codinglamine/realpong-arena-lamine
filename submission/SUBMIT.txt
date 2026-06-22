@@ -1,0 +1,23 @@
+TOURNAMENT SUBMISSION
+=====================
+
+Submit as:   newfolder.py:newfolder_trained_best.pt
+
+Files (both required, keep them together):
+  newfolder.py                 - the model + the Agent class (the arena calls this)
+  newfolder_trained_best.pt    - the trained weights
+
+How the arena uses it:
+  It imports newfolder.py, builds Agent("newfolder_trained_best.pt"), then calls
+  agent.reset() at the start of each game and agent.act(frame) every step.
+  frame = 80x80 binary image, your paddle on the RIGHT. act() returns 2 (UP) or 3 (DOWN).
+
+Dependencies: numpy + torch only (self-contained, no local imports).
+
+Test locally:
+  python arena.py newfolder.py:newfolder_trained_best.pt realpong.py:realpong.pt bf
+
+Verified (current "new ball physics" arena, best of 3 to 21):
+  vs repo realpong : 21- 6 , 21- 2   (set won)
+  vs bf (tracker)  : 21- 0 , 21- 0   (set won, 0 conceded)
+  Round-robin      : CHAMPION

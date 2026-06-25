@@ -1,23 +1,20 @@
 TOURNAMENT SUBMISSION
 =====================
 
-Submit as:   newfolder.py:newfolder_trained_best.pt
+Submit as:   lamine.py:lamine.pt               (regular arena)
+             lamine_chaos.py:lamine_chaos.pt   (chaos arena)
 
-Files (both required, keep them together):
-  newfolder.py                 - the model + the Agent class (the arena calls this)
-  newfolder_trained_best.pt    - the trained weights
+Files (keep each pair together):
+  lamine.py / lamine.pt              - regular arena: ~1.7M-param CNN (model + Agent class)
+  lamine_chaos.py / lamine_chaos.pt  - chaos arena: CNN
 
 How the arena uses it:
-  It imports newfolder.py, builds Agent("newfolder_trained_best.pt"), then calls
-  agent.reset() at the start of each game and agent.act(frame) every step.
-  frame = 80x80 binary image, your paddle on the RIGHT. act() returns 2 (UP) or 3 (DOWN).
+  It imports the .py, builds Agent("...pt"), then calls agent.reset() at the start of
+  each game and agent.act(frame) every step. frame = 80x80 binary image, your paddle on
+  the RIGHT. act() returns 2 (UP) or 3 (DOWN).
 
 Dependencies: numpy + torch only (self-contained, no local imports).
 
 Test locally:
-  python arena.py newfolder.py:newfolder_trained_best.pt realpong.py:realpong.pt bf
-
-Verified (current "new ball physics" arena, best of 3 to 21):
-  vs repo realpong : 21- 6 , 21- 2   (set won)
-  vs bf (tracker)  : 21- 0 , 21- 0   (set won, 0 conceded)
-  Round-robin      : CHAMPION
+  python arena.py       lamine.py:lamine.pt              willem-cnn.py:willem-cnn.pt bf
+  python arena_chaos.py lamine_chaos.py:lamine_chaos.pt  willem-cnn.py:willem-cnn.pt bf
